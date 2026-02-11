@@ -1,0 +1,54 @@
+/*
+  ESP32 #2: ESP-NOW Receiver (prints ultrasonic distance)
+*/
+
+#include <esp_now.h>
+#include <WiFi.h>
+#include <string.h>
+
+// Must match transmitter struct exactly
+typedef struct struct_message {
+  float distance_cm;
+  uint32_t duration_us;
+} struct_message;
+
+struct_message myData;
+
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  if (len != sizeof(myData)) {
+    Serial.print("Unexpected packet size: ");
+    Serial.println(len);
+    return;
+  }
+
+  memcpy(&myData, incomingData, sizeof(myData));
+
+  Serial.print("Received distance: ");
+  Serial.print(myData.distance_cm);
+  Serial.print(" cm");
+  Serial.print(" | duration_us: ");
+  Serial.println(myData.duration_us);
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  WiFi.mode(WIFI_STA);
+
+  // Print this once so you can copy MAC into transmitter code
+  Serial.print("Receiver MAC: ");
+  Serial.println(WiFi.macAddress());
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+
+  Serial.println("Receiver ready.");
+}
+
+void loop() {
+  // nothing needed
+}
