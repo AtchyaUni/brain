@@ -1,1 +1,69 @@
+#include <Wire.h>
+#include "Adafruit_DRV2605.h"
 
+Adafruit_DRV2605 drvLeft;
+Adafruit_DRV2605 drvRight;
+
+// Track which motors are actually working
+bool leftAlive = false;
+bool rightAlive = false;
+
+// Pins for Right Driver
+#define SDA_2 18
+#define SCL_2 19
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("\n--- SYSTEM START ---");
+
+  // -------------------------
+  // 1. Setup LEFT (Pins 21, 22)
+  // -------------------------
+  Wire.begin(21, 22);
+  if (drvLeft.begin(&Wire)) {
+    Serial.println("LEFT Driver: ONLINE");
+    leftAlive = true;
+    drvLeft.useLRA();
+    drvLeft.selectLibrary(1);
+    drvLeft.setMode(DRV2605_MODE_INTTRIG);
+  } else {
+    Serial.println("LEFT Driver: OFFLINE (Check Yellow/Green wires)");
+  }
+
+  // -------------------------
+  // 2. Setup RIGHT (Pins 18, 19)
+  // -------------------------
+  Wire1.begin(SDA_2, SCL_2);
+  if (drvRight.begin(&Wire1)) {
+    Serial.println("RIGHT Driver: ONLINE");
+    rightAlive = true;
+    drvRight.useLRA();
+    drvRight.selectLibrary(1);
+    drvRight.setMode(DRV2605_MODE_INTTRIG);
+  } else {
+    Serial.println("RIGHT Driver: OFFLINE (Check D18/D19 wires)");
+  }
+  
+  Serial.println("--- SETUP COMPLETE ---");
+}
+
+void loop() {
+  // Only try to vibrate motors that actually exist
+  
+  if (leftAlive) {
+    Serial.print("Left Click... ");
+    drvLeft.setWaveform(0, 1); 
+    drvLeft.setWaveform(1, 0);
+    drvLeft.go();
+  }
+
+  if (rightAlive) {
+    Serial.print("Right Click... ");
+    drvRight.setWaveform(0, 1);
+    drvRight.setWaveform(1, 0);
+    drvRight.go();
+  }
+  
+  Serial.println();
+  delay(1000);
+}
