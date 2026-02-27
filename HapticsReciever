@@ -1,0 +1,76 @@
+#include <esp_now.h>
+#include <WiFi.h>
+#include <Wire.h>
+#include "Adafruit_DRV2605.h"
+
+Adafruit_DRV2605 drv;
+
+typedef struct {
+  bool enable;
+  uint8_t effect;
+  uint8_t repeat;
+} BuzzCmd;
+
+volatile bool gotCmd = false;
+BuzzCmd lastCmd;
+
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  if (len != sizeof(BuzzCmd)) return;
+  memcpy(&lastCmd, incomingData, sizeof(BuzzCmd));
+  gotCmd = true;
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+
+  WiFi.mode(WIFI_STA);
+  Serial.print("RX MAC: ");
+  Serial.println(WiFi.macAddress());
+
+  // ---- DRV2605 setup (choose your pins!)
+  Wire.begin(21, 22); // SDA, SCL
+  if (!drv.begin()) {
+    Serial.println("DRV2605 not found on I2C. Check wiring + pullups.");
+    while (1) delay(10);
+  }
+
+  drv.useLRA();                 // or useERM() depending on your motor
+  drv.selectLibrary(1);
+  drv.setMode(DRV2605_MODE_INTTRIG);
+
+  // ---- ESP-NOW setup
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW init failed");
+    return;
+  }
+  esp_now_register_recv_cb(OnDataRecv);
+
+  Serial.println("Receiver ready.");
+}
+
+void playEffect(uint8_t effect, uint8_t repeat) {
+  for (uint8_t i = 0; i < repeat; i++) {
+    drv.setWaveform(0, effect);
+    drv.setWaveform(1, 0);
+    drv.go();
+    delay(80);  // spacing between clicks (tweak)
+  }
+}
+
+void loop() {
+  if (gotCmd) {
+    gotCmd = false;
+
+    Serial.print("Cmd: enable=");
+    Serial.print(lastCmd.enable);
+    Serial.print(" effect=");
+    Serial.print(lastCmd.effect);
+    Serial.print(" repeat=");
+    Serial.println(lastCmd.repeat);
+
+    if (lastCmd.enable) {
+      playEffect(lastCmd.effect, lastCmd.repeat);
+    }
+  }
+}
