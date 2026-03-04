@@ -1,0 +1,110 @@
+#include <esp_now.h>
+#include <WiFi.h>
+#include <Wire.h>
+#include <vl53l1x_class.h>
+
+// --------- I2C pins (change if you wired differently)
+#define SDA_PIN 21
+#define SCL_PIN 22
+
+// --------- Receiver MAC (CHANGE THIS)
+uint8_t receiverMAC[] = {0xE0, 0x8C, 0xFE, 0x5C, 0x1B, 0xA4};
+
+// --------- VL53L1X object
+VL53L1X sensor(&Wire, -1);  // -1 = no XSHUT
+
+// --------- ESP-NOW packet
+typedef struct __attribute__((packed)) {
+  uint16_t distance_mm;   // 0..4000+
+  uint8_t  rangeStatus;   // 0 = valid
+  uint8_t  dataReady;     // 1 when we sent a fresh sample
+  uint32_t seq;           // packet counter
+} lidar_packet_t;
+
+lidar_packet_t pkt;
+
+esp_now_peer_info_t peerInfo;
+
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("ESP-NOW send: ");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+
+  // WiFi / ESP-NOW
+  WiFi.mode(WIFI_STA);
+  Serial.print("TX MAC: ");
+  Serial.println(WiFi.macAddress());
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    while (true) {}
+  }
+  esp_now_register_send_cb(OnDataSent);
+
+  memset(&peerInfo, 0, sizeof(peerInfo));
+  memcpy(peerInfo.peer_addr, receiverMAC, 6);
+  peerInfo.channel = 0;      // must match RX channel; 0 usually works if both are STA
+  peerInfo.encrypt = false;
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add peer");
+    while (true) {}
+  }
+
+  // I2C / VL53L1X
+  Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setClock(100000);
+
+  Serial.println("Initializing VL53L1X...");
+  sensor.begin();
+  sensor.InitSensor(0x52);                 // keep your library’s address init
+  sensor.VL53L1X_SetDistanceMode(2);       // 2 = long
+  sensor.VL53L1X_SetTimingBudgetInMs(200);
+  sensor.VL53L1X_SetROI(8, 8);
+  sensor.VL53L1X_StartRanging();
+  Serial.println("VL53L1X ready.");
+}
+
+void loop() {
+  uint8_t dataReady = 0;
+  uint16_t distance = 0;
+  uint8_t rangeStatus = 255;
+
+  sensor.VL53L1X_CheckForDataReady(&dataReady);
+
+  if (dataReady) {
+    sensor.VL53L1X_GetDistance(&distance);
+    sensor.VL53L1X_GetRangeStatus(&rangeStatus);
+    sensor.VL53L1X_ClearInterrupt();
+
+    // Build packet
+    pkt.distance_mm = distance;
+    pkt.rangeStatus = rangeStatus;
+    pkt.dataReady   = 1;
+    pkt.seq++;
+
+    // Send
+    esp_err_t result = esp_now_send(receiverMAC, (uint8_t*)&pkt, sizeof(pkt));
+    if (result != ESP_OK) {
+      Serial.print("esp_now_send error: ");
+      Serial.println(result);
+    } else {
+      // Optional local debug
+      Serial.print("Sent distance_mm=");
+      Serial.print(pkt.distance_mm);
+      Serial.print(" status=");
+      Serial.print(pkt.rangeStatus);
+      Serial.print(" seq=");
+      Serial.println(pkt.seq);
+    }
+
+    delay(50);  // don’t spam the radio
+  }
+
+  // If you want a heartbeat even when no dataReady:
+  // delay(5);
+}
