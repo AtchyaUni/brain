@@ -3,7 +3,8 @@
 #include <Wire.h>
 #include <vl53l1x_class.h>
 
-// --------- I2C pins (change if you wired differently)
+//this is the transciever code and it uses the sensor and sends it to the receiver 
+// --------- I2C pins
 #define SDA_PIN 21
 #define SCL_PIN 22
 
@@ -15,10 +16,10 @@ VL53L1X sensor(&Wire, -1);  // -1 = no XSHUT
 
 // --------- ESP-NOW packet
 typedef struct __attribute__((packed)) {
-  uint16_t distance_mm;   // 0..4000+
-  uint8_t  rangeStatus;   // 0 = valid
-  uint8_t  dataReady;     // 1 when we sent a fresh sample
-  uint32_t seq;           // packet counter
+  uint16_t distance_mm;   
+  uint8_t  rangeStatus;   
+  uint8_t  dataReady;     
+  uint32_t seq;           
 } lidar_packet_t;
 
 lidar_packet_t pkt;
@@ -47,7 +48,7 @@ void setup() {
 
   memset(&peerInfo, 0, sizeof(peerInfo));
   memcpy(peerInfo.peer_addr, receiverMAC, 6);
-  peerInfo.channel = 0;      // must match RX channel; 0 usually works if both are STA
+  peerInfo.channel = 0;     
   peerInfo.encrypt = false;
 
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
